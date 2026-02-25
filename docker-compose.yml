@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-stack-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ingest:
+    build: .
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: python ingest.py
+    # Runs once, exits when done. API waits for this via depends_on.
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+      ingest:
+        condition: service_completed_successfully
+    command: uvicorn app:app --host 0.0.0.0 --port 8000
+
+volumes:
+  redis_data:
